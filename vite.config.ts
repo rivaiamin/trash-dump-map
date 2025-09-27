@@ -8,8 +8,8 @@ export default defineConfig({
 	plugins: [tailwindcss(), sveltekit(), mkcert()],
 	server: {
 		https: {
-			cert: readFileSync('/mnt/c/Users/user/dev-certs/localhost-cert.pem'),
-			key: readFileSync('/mnt/c/Users/user/dev-certs/localhost-key.pem')
+			cert: readFileSync('src/ssl/localhost+2.pem'),
+			key: readFileSync('src/ssl/localhost+2-key.pem')
 		},
 		host: true,
 		hmr: {
@@ -19,8 +19,8 @@ export default defineConfig({
 	},
 	preview: {
 		https: {
-			cert: readFileSync('/mnt/c/Users/user/dev-certs/localhost-cert.pem'),
-			key: readFileSync('/mnt/c/Users/user/dev-certs/localhost-key.pem')
+			cert: readFileSync('src/ssl/localhost+2.pem'),
+			key: readFileSync('src/ssl/localhost+2-key.pem')
 		},
 		host: true
 	}
