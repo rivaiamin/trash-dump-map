@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
-  import type * as Leaflet from 'leaflet';
-  let L: typeof import('leaflet') | null = null;
+  let L: any | null = null;
 
   type Facility = {
     id: string;
@@ -15,10 +14,10 @@
   };
 
   let mapContainer: HTMLDivElement | null = null;
-  let map: Leaflet.Map | null = null;
-  let markersLayer: Leaflet.LayerGroup | null = null;
-  let routeLayer: Leaflet.LayerGroup | null = null;
-  let userLatLng: Leaflet.LatLng | null = null;
+  let map: any | null = null;
+  let markersLayer: any | null = null;
+  let routeLayer: any | null = null;
+  let userLatLng: any | null = null;
   let facilities: Facility[] = [];
   let selectedFacility: Facility | null = null;
   let errorMessage = '';
@@ -33,10 +32,31 @@
   let isSearching = false;
   let activeIndex = -1;
   let searchTimer: any = null;
-  let facilityIdToMarker: Record<string, Leaflet.Marker> = {};
+  let facilityIdToMarker: Record<string, any> = {};
   let listActiveIndex = -1;
 
-  const kmDistance = (a: Leaflet.LatLng, b: Leaflet.LatLng) => a.distanceTo(b) / 1000;
+  const kmDistance = (a: any, b: any) => a.distanceTo(b) / 1000;
+
+  function detectFacilityType(amenity: string, name?: string): Facility['type'] {
+    // First try to detect from name (more reliable for Indonesian facilities)
+    if (name) {
+      const lowerName = name.toLowerCase();
+      
+      // English keywords
+      if (lowerName.includes('recycling') || lowerName.includes('recycle')) return 'recycling';
+      if (lowerName.includes('waste') || lowerName.includes('trash') || lowerName.includes('garbage') || lowerName.includes('dump')) return 'trash';
+      
+      // Indonesian keywords
+      if (lowerName.includes('daur ulang') || lowerName.includes('recycle')) return 'recycling';
+      if (lowerName.includes('tempat sampah') || lowerName.includes('pembuangan') || lowerName.includes('sampah')) return 'trash';
+    }
+    
+    // Fall back to amenity tag if name doesn't provide clear indication
+    if (amenity === 'recycling') return 'recycling';
+    if (amenity === 'waste_disposal') return 'trash';
+    
+    return 'unknown';
+  }
 
   function formatDistance(km?: number) {
     if (km === undefined) return '';
@@ -75,7 +95,7 @@
       const center = el.type === 'node' ? { lat: el.lat, lng: el.lon } : (el.center || {});
       const latNum = Number(center.lat);
       const lngNum = Number(center.lng);
-      const type: Facility['type'] = el.tags?.amenity === 'recycling' ? 'recycling' : el.tags?.amenity === 'waste_disposal' ? 'trash' : 'unknown';
+      const type: Facility['type'] = detectFacilityType(el.tags?.amenity || '', el.tags?.name);
       return {
         id: String(el.id),
         name: el.tags?.name,
@@ -95,7 +115,7 @@
     return results;
   }
 
-  function initMap(center: Leaflet.LatLngExpression, zoom = 13) {
+  function initMap(center: any, zoom = 13) {
     if (!L) throw new Error('Leaflet not loaded');
     if (map) return map;
     map = L.map(mapContainer as HTMLDivElement).setView(center, zoom);
@@ -284,12 +304,12 @@
       userLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
       initMap(userLatLng, 13);
       clearMarkers();
-      L.marker(userLatLng).addTo(markersLayer as Leaflet.LayerGroup).bindPopup('You are here');
+      L.marker(userLatLng).addTo(markersLayer).bindPopup('You are here');
       facilities = await fetchFacilitiesAround(pos.coords.latitude, pos.coords.longitude, 30);
       selectedFacility = null;
       for (const f of facilities) {
         const icon = createFacilityIcon(f.type);
-        const marker = L.marker([f.lat, f.lng], { icon }).addTo(markersLayer as Leaflet.LayerGroup).bindPopup(f.name || f.type);
+        const marker = L.marker([f.lat, f.lng], { icon }).addTo(markersLayer).bindPopup(f.name || f.type);
         marker.on('click', () => selectFacility(f));
         facilityIdToMarker[f.id] = marker;
       }
@@ -356,16 +376,16 @@
     isLoadingFacilities = true;
     const center = L.latLng(s.lat, s.lon);
     initMap(center, 13);
-    (map as Leaflet.Map).setView(center, 13);
+    map.setView(center, 13);
     clearMarkers();
     // Use selected center for distance calculations in this context
     userLatLng = center;
-    L.marker(center).addTo(markersLayer as Leaflet.LayerGroup).bindPopup('Selected area');
+    L.marker(center).addTo(markersLayer).bindPopup('Selected area');
     facilities = await fetchFacilitiesAround(center.lat, center.lng, 30);
     selectedFacility = null;
     for (const f of facilities) {
       const icon = createFacilityIcon(f.type);
-      const marker = L.marker([f.lat, f.lng], { icon }).addTo(markersLayer as Leaflet.LayerGroup).bindPopup(f.name || f.type);
+      const marker = L.marker([f.lat, f.lng], { icon }).addTo(markersLayer).bindPopup(f.name || f.type);
       marker.on('click', () => selectFacility(f));
       facilityIdToMarker[f.id] = marker;
     }
@@ -406,15 +426,36 @@
   }
 </script>
 
-<div class="max-w-screen-md mx-auto p-4 space-y-4">
-  <h1 class="text-2xl font-bold">Find nearby trash & recycling</h1>
+<div class="min-h-screen bg-gradient-to-br from-blue-50 to-green-50">
+  <div class="max-w-screen-md mx-auto p-4 space-y-6">
+    <div class="text-center py-6">
+      <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-green-500 rounded-full mb-4">
+        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+        </svg>
+      </div>
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Find Nearby Trash & Recycling</h1>
+      <p class="text-gray-600">Discover waste disposal and recycling facilities near you</p>
+    </div>
 
-  <div class="flex items-center gap-2">
-    <button class="btn h-11 px-4 rounded bg-black text-white focus-visible:ring-2 ring-black" on:click={useGeolocation}>
-      Use my location
+  <div class="flex flex-col sm:flex-row items-center gap-3">
+    <button 
+      class="inline-flex items-center gap-2 h-12 px-6 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium shadow-lg hover:from-blue-700 hover:to-blue-800 hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none" 
+      on:click={useGeolocation}
+      disabled={isLoadingFacilities}
+    >
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+      </svg>
+      {isLoadingFacilities ? 'Finding location...' : 'Use my location'}
     </button>
     {#if permissionDenied}
-      <div class="text-sm">
+      <div class="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+        </svg>
         Location is off. Use the search bar below to find an area.
       </div>
     {/if}
@@ -422,28 +463,48 @@
 
   <!-- Address search with suggestions (US2.1/US2.2) -->
   <div class="relative">
-    <input
-      class="border rounded px-3 py-2 w-full focus-visible:ring-2 ring-black"
-      placeholder="Search an address"
-      bind:value={addressQuery}
-      on:input={onAddressInput}
-      on:keydown={onAddressKeydown}
-      aria-autocomplete="list"
-      aria-expanded={suggestions.length > 0}
-    >
-    {#if isSearching}
-      <div class="absolute right-2 top-2 text-xs text-gray-500">Searching…</div>
-    {/if}
+    <div class="relative">
+      <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+        </svg>
+      </div>
+      <input
+        class="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 placeholder-gray-500"
+        placeholder="Search for an address or location"
+        bind:value={addressQuery}
+        on:input={onAddressInput}
+        on:keydown={onAddressKeydown}
+        aria-autocomplete="list"
+        aria-expanded={suggestions.length > 0}
+      >
+      {#if isSearching}
+        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
+          <svg class="animate-spin h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </div>
+      {/if}
+    </div>
     {#if suggestions.length > 0}
-      <ul class="absolute z-10 mt-1 w-full bg-white border rounded shadow divide-y" role="listbox">
+      <ul class="absolute z-20 mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg divide-y divide-gray-100 max-h-60 overflow-y-auto" role="listbox">
         {#each suggestions as s, i}
           <li
-            class="px-3 py-3 cursor-pointer hover:bg-gray-50 {i === activeIndex ? 'bg-gray-100' : ''}"
+            class="px-4 py-3 cursor-pointer hover:bg-blue-50 transition-colors duration-150 {i === activeIndex ? 'bg-blue-100' : ''}"
             role="option"
             aria-selected={i === activeIndex}
             on:click={() => chooseSuggestion(i)}
+            on:keydown={(e) => e.key === 'Enter' && chooseSuggestion(i)}
+            tabindex="0"
           >
-            {s.display_name}
+            <div class="flex items-center gap-3">
+              <svg class="h-4 w-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+              </svg>
+              <span class="text-sm text-gray-700 truncate">{s.display_name}</span>
+            </div>
           </li>
         {/each}
       </ul>
@@ -451,52 +512,133 @@
   </div>
 
   {#if errorMessage}
-    <div class="text-sm text-red-600">{errorMessage}</div>
+    <div class="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+      <svg class="w-5 h-5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+      <span class="text-sm text-red-700">{errorMessage}</span>
+    </div>
   {/if}
 
   <div class="relative">
-    <div bind:this={mapContainer} class="h-[60vh] w-full rounded border"></div>
+    <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+      <div bind:this={mapContainer} class="h-[60vh] w-full"></div>
+    </div>
     {#if isLoadingFacilities}
-      <div class="absolute inset-0 bg-white/50 grid place-items-center text-sm">Loading…</div>
+      <div class="absolute inset-0 bg-white/80 backdrop-blur-sm grid place-items-center rounded-xl">
+        <div class="flex flex-col items-center gap-3">
+          <svg class="animate-spin h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span class="text-sm font-medium text-gray-700">Loading facilities...</span>
+        </div>
+      </div>
     {/if}
     {#if showingRoute}
       <button 
-        class="absolute top-2 right-2 h-10 px-3 rounded bg-white border shadow focus-visible:ring-2 ring-black text-sm"
+        class="absolute top-4 right-4 inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-white border border-gray-200 shadow-lg hover:shadow-xl focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 text-sm font-medium text-gray-700 transition-all duration-200"
         on:click={clearRoute}
       >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
         Clear Route
       </button>
     {/if}
   </div>
 
-  <div>
-    <h2 class="font-semibold mb-2">Nearby facilities</h2>
+  <div class="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-8 h-8 bg-gradient-to-br from-green-500 to-blue-500 rounded-lg flex items-center justify-center">
+        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+        </svg>
+      </div>
+      <h2 class="text-xl font-bold text-gray-800">Nearby Facilities</h2>
+      {#if facilities.length > 0}
+        <span class="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">{facilities.length} found</span>
+      {/if}
+    </div>
+    
     {#if facilities.length === 0}
-      <div class="text-sm text-gray-600">No results yet. Try "Use my location" or search an address.</div>
+      <div class="text-center py-8">
+        <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+        </svg>
+        <p class="text-gray-500 mb-2">No facilities found yet</p>
+        <p class="text-sm text-gray-400">Try "Use my location" or search for an address to find nearby facilities</p>
+      </div>
     {:else}
-      <ul class="space-y-2" on:keydown={onFacilitiesKeydown} tabindex="0" role="listbox" aria-activedescendant={selectedFacility?.id}>
+      <ul class="space-y-3" on:keydown={onFacilitiesKeydown} tabindex="0" role="listbox" aria-activedescendant={selectedFacility?.id}>
         {#each facilities as f, i}
-          <li id={f.id} class="p-3 rounded border cursor-pointer focus-visible:ring-2 ring-black {selectedFacility?.id === f.id ? 'ring-2 ring-black' : ''}" on:click={() => selectFacility(f)} tabindex="0" role="option" aria-selected={selectedFacility?.id === f.id} on:focus={() => { listActiveIndex = i; }}>
-            <div class="font-medium">{f.name || f.type}</div>
-            <div class="text-sm text-gray-600">
-              {formatDistance(f.distanceKm)}
+          <li 
+            id={f.id} 
+            class="group p-4 rounded-lg border border-gray-200 cursor-pointer transition-all duration-200 hover:shadow-md hover:border-blue-300 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 {selectedFacility?.id === f.id ? 'ring-2 ring-blue-500 border-blue-300 bg-blue-50' : 'bg-white'}" 
+            on:click={() => selectFacility(f)} 
+            on:keydown={(e) => e.key === 'Enter' && selectFacility(f)}
+            tabindex="0" 
+            role="option" 
+            aria-selected={selectedFacility?.id === f.id} 
+            on:focus={() => { listActiveIndex = i; }}
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex items-start gap-3 flex-1">
+                <div class="flex-shrink-0 mt-1">
+                  {#if f.type === 'trash'}
+                    <div class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                      <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                      </svg>
+                    </div>
+                  {:else if f.type === 'recycling'}
+                    <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                      <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                      </svg>
+                    </div>
+                  {:else}
+                    <div class="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                      <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                      </svg>
+                    </div>
+                  {/if}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="font-semibold text-gray-900 truncate">{f.name || f.type}</div>
+                  <div class="flex items-center gap-2 mt-1">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                    <span class="text-sm text-gray-600">{formatDistance(f.distanceKm)}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="mt-2 flex gap-2">
+            <div class="mt-3 flex gap-2">
               <button 
-                class="inline-flex items-center justify-center h-11 px-4 rounded bg-blue-600 text-white focus-visible:ring-2 ring-blue-600" 
+                class="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed" 
                 on:click={(e) => { e.stopPropagation(); showDirections(f); }}
                 disabled={!userLatLng}
               >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                </svg>
                 Show Route
               </button>
               <a 
-                class="inline-flex items-center justify-center h-11 px-4 rounded bg-black text-white focus-visible:ring-2 ring-black" 
+                class="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 transition-colors duration-200" 
                 href={directionsUrlFor(f)} 
                 target="_blank" 
                 rel="noopener noreferrer"
                 on:click={(e) => e.stopPropagation()}
               >
-                External Directions
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                </svg>
+                External
               </a>
             </div>
           </li>
@@ -506,33 +648,75 @@
   </div>
 
   {#if selectedFacility}
-    <div class="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-screen-sm bg-white border shadow rounded p-3">
+    <div class="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-screen-sm bg-white border border-gray-200 shadow-2xl rounded-xl p-4 transform transition-all duration-300 ease-out">
       <div class="flex items-center justify-between gap-3">
-        <div>
-          <div class="font-semibold">{selectedFacility.name || selectedFacility.type}</div>
-          <div class="text-sm text-gray-600">
-            {formatDistance(selectedFacility.distanceKm)}
+        <div class="flex items-center gap-3 flex-1 min-w-0">
+          <div class="flex-shrink-0">
+            {#if selectedFacility.type === 'trash'}
+              <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+              </div>
+            {:else if selectedFacility.type === 'recycling'}
+              <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+              </div>
+            {:else}
+              <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+              </div>
+            {/if}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-gray-900 truncate">{selectedFacility.name || selectedFacility.type}</div>
+            <div class="flex items-center gap-1 mt-1">
+              <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+              </svg>
+              <span class="text-sm text-gray-600">{formatDistance(selectedFacility.distanceKm)}</span>
+            </div>
           </div>
         </div>
         <div class="flex items-center gap-2">
           <button 
-            class="inline-flex items-center justify-center h-11 px-4 rounded bg-blue-600 text-white focus-visible:ring-2 ring-blue-600" 
+            class="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed" 
             on:click={() => selectedFacility && showDirections(selectedFacility)}
             disabled={!userLatLng || !selectedFacility}
           >
-            Show Route
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+            </svg>
+            Route
           </button>
           <a 
-            class="inline-flex items-center justify-center h-11 px-4 rounded bg-black text-white focus-visible:ring-2 ring-black" 
+            class="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 transition-colors duration-200" 
             href={directionsUrlFor(selectedFacility)} 
             target="_blank" 
             rel="noopener noreferrer"
           >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+            </svg>
             External
           </a>
-          <button class="h-11 px-3 rounded border focus-visible:ring-2 ring-black" on:click={() => selectedFacility = null} aria-label="Close">Close</button>
+          <button 
+            class="h-10 w-10 rounded-lg border border-gray-200 hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 transition-colors duration-200 flex items-center justify-center" 
+            on:click={() => selectedFacility = null} 
+            aria-label="Close"
+          >
+            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
   {/if}
+  </div>
 </div>
