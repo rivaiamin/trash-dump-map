@@ -17,6 +17,7 @@
 	let map: any | null = null;
 	let markersLayer: any | null = null;
 	let routeLayer: any | null = null;
+	let routingControl: any | null = null;
 	let userLatLng: any | null = null;
 	let facilities: Facility[] = [];
 	let selectedFacility: Facility | null = null;
@@ -38,6 +39,23 @@
 	let listActiveIndex = -1;
 
 	const kmDistance = (a: any, b: any) => a.distanceTo(b) / 1000;
+
+	// Helper function to load scripts dynamically
+	function loadScript(src: string): Promise<void> {
+		return new Promise((resolve, reject) => {
+			// Check if script is already loaded
+			if (document.querySelector(`script[src="${src}"]`)) {
+				resolve();
+				return;
+			}
+			
+			const script = document.createElement('script');
+			script.src = src;
+			script.onload = () => resolve();
+			script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+			document.head.appendChild(script);
+		});
+	}
 
 	function detectFacilityType(amenity: string, name?: string): Facility['type'] {
 		// First try to detect from name (more reliable for Indonesian facilities)
@@ -151,6 +169,10 @@
 
 	function clearRoute() {
 		routeLayer?.clearLayers();
+		if (routingControl) {
+			map?.removeControl(routingControl);
+			routingControl = null;
+		}
 		showingRoute = false;
 		routeInstructions = [];
 		routeSummary = null;
@@ -238,91 +260,95 @@
 		clearRoute();
 
 		try {
-			// Fetch route from OSRM with detailed instructions
-			const startLng = userLatLng.lng;
-			const startLat = userLatLng.lat;
-			const endLng = f.lng;
-			const endLat = f.lat;
-
-			const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&steps=true`;
-
-			const response = await fetch(url);
-			if (!response.ok) throw new Error('Route request failed');
-
-			const data = await response.json();
-
-			if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
-				throw new Error('No route found');
+			// Load Leaflet Routing Machine via CDN (like the working Blade example)
+			await loadScript('https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js');
+			
+			// Wait a bit for the script to fully initialize
+			await new Promise(resolve => setTimeout(resolve, 100));
+			
+			// Debug: Check if L.Routing is now available
+			console.log('L after CDN load:', L);
+			console.log('L.Routing after CDN load:', (L as any).Routing);
+			console.log('L.Routing.control:', (L as any).Routing?.control);
+			console.log('window.L:', (window as any).L);
+			console.log('window.L.Routing:', (window as any).L?.Routing);
+			
+			// Check if L.Routing exists on window object
+			if ((window as any).L?.Routing) {
+				(L as any).Routing = (window as any).L.Routing;
+				console.log('Copied L.Routing from window:', (L as any).Routing);
 			}
+			
+			// Final check
+			if (!(L as any).Routing || !(L as any).Routing.control) {
+				throw new Error('Leaflet Routing Machine not properly loaded from CDN');
+			}
+			
+			// Create waypoints
+			const waypoints = [
+				L.latLng(userLatLng.lat, userLatLng.lng),
+				L.latLng(f.lat, f.lng)
+			];
 
-			const route = data.routes[0];
-			const coordinates = route.geometry.coordinates;
+			// Create routing control using the exact same pattern as the working example
+			routingControl = (L as any).Routing.control({
+				waypoints: waypoints,
+				router: (L as any).Routing.osrmv1({
+					serviceUrl: 'https://router.project-osrm.org/route/v1',
+				}),
+				createMarker: function(i: number, waypoint: any, n: number) {
+					if (i === 0) {
+						// Start marker
+						return L.marker(waypoint.latLng, {
+							icon: L.icon({
+								iconUrl: 'data:image/svg+xml;base64,' + btoa(`
+									<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+										<circle cx="12" cy="12" r="10" fill="#3b82f6" stroke="white" stroke-width="2"/>
+										<circle cx="12" cy="12" r="4" fill="white"/>
+									</svg>
+								`),
+								iconSize: [24, 24],
+								iconAnchor: [12, 12]
+							})
+						}).bindPopup('Start: Your location');
+					} else {
+						// End marker
+						return L.marker(waypoint.latLng, {
+							icon: L.icon({
+								iconUrl: 'data:image/svg+xml;base64,' + btoa(`
+									<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+										<circle cx="12" cy="12" r="10" fill="#dc2626" stroke="white" stroke-width="2"/>
+										<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="white"/>
+									</svg>
+								`),
+								iconSize: [24, 24],
+								iconAnchor: [12, 12]
+							})
+						}).bindPopup(`Destination: ${f.name || f.type}`);
+					}
+				},
+				routeWhileDragging: false,
+				show: false, // Hide the default control panel
+				addWaypoints: false,
+				lineOptions: {
+					styles: [{ color: '#3b82f6', weight: 4, opacity: 0.7 }]
+				}
+			}).addTo(map);
 
-			// Convert coordinates to Leaflet format (lat, lng)
-			const latLngs = coordinates.map((coord: [number, number]) => L!.latLng(coord[1], coord[0]));
-
-			// Create polyline for the route
-			const routeLine = L.polyline(latLngs, {
-				color: '#3b82f6',
-				weight: 4,
-				opacity: 0.7
-			}).addTo(routeLayer!);
-
-			// Add start and end markers
-			const startMarker = L.marker(userLatLng, {
-				icon: L.icon({
-					iconUrl: 'data:image/svg+xml;base64,' + btoa(`
-						<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-							<circle cx="12" cy="12" r="10" fill="#3b82f6" stroke="white" stroke-width="2"/>
-							<circle cx="12" cy="12" r="4" fill="white"/>
-						</svg>
-					`),
-					iconSize: [24, 24],
-					iconAnchor: [12, 12]
-				})
-			}).addTo(routeLayer!).bindPopup('Start: Your location');
-
-			const endMarker = L.marker(L.latLng(f.lat, f.lng), {
-				icon: L.icon({
-					iconUrl: 'data:image/svg+xml;base64,' + btoa(`
-						<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-							<circle cx="12" cy="12" r="10" fill="#dc2626" stroke="white" stroke-width="2"/>
-							<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="white"/>
-						</svg>
-					`),
-					iconSize: [24, 24],
-					iconAnchor: [12, 12]
-				})
-			}).addTo(routeLayer!).bindPopup(`Destination: ${f.name || f.type}`);
-
-			// Fit map to show the entire route
-			const bounds = L.latLngBounds(latLngs);
-			map.fitBounds(bounds, { padding: [20, 20] });
+			// Listen for route found event to get instructions
+			routingControl.on('routesfound', function(e: any) {
+				const routes = e.routes;
+				if (routes && routes.length > 0) {
+					const route = routes[0];
+					routeSummary = {
+						distance: (route.summary.totalDistance / 1000).toFixed(1),
+						duration: Math.round(route.summary.totalTime / 60)
+					};
+					routeInstructions = route.instructions || [];
+				}
+			});
 
 			showingRoute = true;
-
-			// Extract route instructions from OSRM response
-			if (route.legs && route.legs.length > 0) {
-				routeSummary = {
-					distance: (route.distance / 1000).toFixed(1),
-					duration: Math.round(route.duration / 60)
-				};
-
-				// Process steps from all legs
-				routeInstructions = [];
-				route.legs.forEach((leg: any) => {
-					if (leg.steps) {
-						leg.steps.forEach((step: any) => {
-							if (step.maneuver && step.maneuver.instruction) {
-								routeInstructions.push({
-									text: step.maneuver.instruction,
-									distance: step.distance
-								});
-							}
-						});
-					}
-				});
-			}
 
 		} catch (err) {
 			console.error('Failed to show route:', err);
@@ -675,7 +701,7 @@
 		<!-- Main content area with responsive layout -->
 		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 			<!-- Map section -->
-			<div class="lg:col-span-2 relative">
+			<div class="lg:col-span-2 relative z-10">
 				<div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
 					<div bind:this={mapContainer} class="h-[60vh] lg:h-[70vh] w-full"></div>
 				</div>
@@ -929,7 +955,7 @@
 		<!-- Directions Panel -->
 		{#if showingRoute && routeInstructions.length > 0}
 			<div
-				class="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-md lg:bottom-6 lg:left-6 lg:translate-x-0 lg:w-80 bg-white border border-gray-200 shadow-2xl rounded-xl overflow-hidden transform transition-all duration-300 ease-out"
+				class="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-md lg:bottom-6 lg:left-6 lg:translate-x-0 lg:w-80 bg-white border border-gray-200 shadow-2xl rounded-xl overflow-hidden transform transition-all duration-300 ease-out z-50"
 			>
 				<div class="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-4">
 					<div class="flex items-center justify-between">
