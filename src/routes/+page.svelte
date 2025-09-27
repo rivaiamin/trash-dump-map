@@ -272,35 +272,32 @@
 			console.log('L.Routing.control:', (L as any).Routing?.control);
 			console.log('window.L:', (window as any).L);
 			console.log('window.L.Routing:', (window as any).L?.Routing);
-			
-			// Check if L.Routing exists on window object
-			if ((window as any).L?.Routing) {
-				(L as any).Routing = (window as any).L.Routing;
-				console.log('Copied L.Routing from window:', (L as any).Routing);
-			}
+
+			// Use window.L directly since it has the Routing property
+			const globalL = (window as any).L;
 			
 			// Final check
-			if (!(L as any).Routing || !(L as any).Routing.control) {
+			if (!globalL?.Routing || !globalL.Routing.control) {
 				throw new Error('Leaflet Routing Machine not properly loaded from CDN');
 			}
 			
-			// Create waypoints
+			// Create waypoints using the global L object
 			const waypoints = [
-				L.latLng(userLatLng.lat, userLatLng.lng),
-				L.latLng(f.lat, f.lng)
+				globalL.latLng(userLatLng.lat, userLatLng.lng),
+				globalL.latLng(f.lat, f.lng)
 			];
 
-			// Create routing control using the exact same pattern as the working example
-			routingControl = (L as any).Routing.control({
+			// Create routing control using the global L object
+			routingControl = globalL.Routing.control({
 				waypoints: waypoints,
-				router: (L as any).Routing.osrmv1({
+				router: globalL.Routing.osrmv1({
 					serviceUrl: 'https://router.project-osrm.org/route/v1',
 				}),
 				createMarker: function(i: number, waypoint: any, n: number) {
 					if (i === 0) {
 						// Start marker
-						return L.marker(waypoint.latLng, {
-							icon: L.icon({
+						return globalL.marker(waypoint.latLng, {
+							icon: globalL.icon({
 								iconUrl: 'data:image/svg+xml;base64,' + btoa(`
 									<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
 										<circle cx="12" cy="12" r="10" fill="#3b82f6" stroke="white" stroke-width="2"/>
@@ -313,8 +310,8 @@
 						}).bindPopup('Start: Your location');
 					} else {
 						// End marker
-						return L.marker(waypoint.latLng, {
-							icon: L.icon({
+						return globalL.marker(waypoint.latLng, {
+							icon: globalL.icon({
 								iconUrl: 'data:image/svg+xml;base64,' + btoa(`
 									<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
 										<circle cx="12" cy="12" r="10" fill="#dc2626" stroke="white" stroke-width="2"/>
